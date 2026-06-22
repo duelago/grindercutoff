@@ -15,7 +15,7 @@ Stop your grinder automatically when the desired dose is reached, without modify
 
 **You reach the web gui at: http://grindercutoff.local/**
 
-You need to install the ESP32 close to your grinder. The ESP32 speaks bluetooth with the scale and wifi/mqtt with the Tasmota relay that controls ON/OFF on your grinder. 
+You need to install the ESP32 close to your grinder. The ESP32 speaks bluetooth with the scale and wifi/mqtt with the Tasmota relay that controls ON/OFF on your grinder. <p></p>It is pretty much set and forget once you have dialed in your settings like coffee weight and retention. <p></p>You dont't have to start the grinding via the web gui. Just press the power button on the Tasmota relay.
 
 <img width="257" height="857" alt="Screenshot 2026-06-22 at 17 24 44" src="https://github.com/user-attachments/assets/f6cefff0-fa10-43b0-b41c-c265f14b96f8" />
 
