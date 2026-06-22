@@ -5,7 +5,7 @@
 ![MQTT](https://img.shields.io/badge/MQTT-enabled-orange)
 ![BLE](https://img.shields.io/badge/BLE-MyScale_KP2048B-purple)
 
-**Automatic grind-by-weight for espresso grinders using a MyScale KP2048B scale, ESP32-C6, MQTT, and a Tasmota smart plug.**
+**Automatic grind-by-weight for "dumb" espresso grinders using a MyScale KP2048B scale, ESP32-C6, MQTT, and a Tasmota smart plug.**
 
 Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
 
@@ -28,17 +28,10 @@ MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ─�
 ## How It Works
 
 1. Place the portafilter on the scale and tare it.
-2. Start the grinder using the smart plug button, Home Assistant, or another MQTT trigger.
+2. Start the grinder using the smart plug button.
 3. GrinderCutoff detects that grinding has started.
 4. The ESP32 continuously monitors the scale weight via BLE.
-5. When the measured weight reaches:
-
-```text
-Target Weight - Pre-Offset
-```
-
-the grinder is switched off automatically.
-
+5. When the measured weight reaches Target Weightthe grinder is switched off automatically.
 6. The system waits for remaining grounds to fall and calculates the final dose.
 7. The adaptive algorithm refines the stop point over time.
 
@@ -48,24 +41,21 @@ the grinder is switched off automatically.
 
 | Component | Example |
 |------------|---------|
-| ESP32-C6 | Seeed Studio XIAO ESP32C6 |
-| Scale | MyScale KP2048B |
-| Smart Plug | Any Tasmota-flashed plug |
-| MQTT Broker | Mosquitto |
+| ESP32-C6 |  | https://www.aliexpress.com/item/1005008557621275.html
+| Scale | MyScale KP2048B https://www.aliexpress.com/item/1005006441099756.html |
+| Smart Plug | Any Tasmota-flashed plug https://www.aliexpress.com/item/1005006441099756.html |
+| MQTT Broker | Mosquitto | (Will also work standalone without mqtt using http instead)
 | WiFi Network | 2.4 GHz |
 
 
 <img width="617" height="666" alt="Screenshot 2026-06-22 at 08 13 53" src="https://github.com/user-attachments/assets/09d3d1eb-a6cc-4c1f-b6b8-83ac52910654" />
 
-https://www.aliexpress.com/item/1005008557621275.html
 
 <img width="1260" height="710" alt="Screenshot 2026-06-22 at 08 15 41" src="https://github.com/user-attachments/assets/54c38488-a9f1-42c3-8b43-c7e455af3b39" />
 
-https://www.aliexpress.com/item/1005006441099756.html
 
 <img width="1286" height="654" alt="Screenshot 2026-06-22 at 08 16 42" src="https://github.com/user-attachments/assets/248e98f2-0f3d-4045-98d1-8a256f7e55f7" />
 
-https://www.aliexpress.com/item/1005006441099756.html
 
 ---
 
@@ -109,10 +99,10 @@ const char* WIFI_PASSWORD = "YOUR_PASSWORD";
 ### Configure MQTT
 
 ```cpp
-char mqttServer[64]   = "192.168.1.10";
+char mqttServer[64]   = "192.168.1.x";
 char mqttUser[32]     = "";
 char mqttPass[32]     = "";
-char tasmotaTopic[64] = "grinderplug";
+char tasmotaTopic[64] = "Tasmota_topic_xxx";
 ```
 
 ### Upload
