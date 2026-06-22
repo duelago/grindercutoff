@@ -1,5 +1,5 @@
 # GrinderCutoff
-Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
+Stop your grinder automatically when the desired dose is reached, without modifying the grinder itself.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![ESP32-C6](https://img.shields.io/badge/ESP32-C6-blue)
