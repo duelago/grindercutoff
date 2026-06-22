@@ -1,4 +1,4 @@
-# GrinderCutoff ☕⚖️
+# GrinderCutoff
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![ESP32-C6](https://img.shields.io/badge/ESP32-C6-blue)
