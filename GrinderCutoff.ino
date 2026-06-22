@@ -445,7 +445,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <div><label>Password</label>
         <input type="password" id="mqttPass" placeholder="(tomt = ingen auth)"></div>
     </div>
-    <button class="btn-save" onclick="saveMqtt()">💾 Spara MQTT</button>
+    <button class="btn-save" onclick="saveMqtt()">💾 Save MQTT</button>
     <div class="msg" id="mqttMsg"></div>
   </div>
 
