@@ -41,7 +41,7 @@ MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ─�
 
 | Component | Example |
 |------------|---------|
-| ESP32-C6 |  | https://www.aliexpress.com/item/1005008557621275.html
+| ESP32-C6 |  | https://www.aliexpress.com/item/1005008557621275.html |
 | Scale | MyScale KP2048B https://www.aliexpress.com/item/1005006441099756.html |
 | Smart Plug | Any Tasmota-flashed plug https://www.aliexpress.com/item/1005006441099756.html |
 | MQTT Broker | Mosquitto | (Will also work standalone without mqtt using http instead)
