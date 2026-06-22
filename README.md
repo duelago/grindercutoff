@@ -54,6 +54,14 @@ the grinder is switched off automatically.
 | MQTT Broker | Mosquitto |
 | WiFi Network | 2.4 GHz |
 
+
+<img width="617" height="666" alt="Screenshot 2026-06-22 at 08 13 53" src="https://github.com/user-attachments/assets/09d3d1eb-a6cc-4c1f-b6b8-83ac52910654" />
+
+https://www.aliexpress.com/item/1005008557621275.html
+
+<img width="1260" height="710" alt="Screenshot 2026-06-22 at 08 15 41" src="https://github.com/user-attachments/assets/54c38488-a9f1-42c3-8b43-c7e455af3b39" />
+
+https://www.aliexpress.com/item/1005006441099756.html
 ---
 
 ## Software Requirements
