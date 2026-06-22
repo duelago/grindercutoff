@@ -5,7 +5,7 @@
 ![MQTT](https://img.shields.io/badge/MQTT-enabled-orange)
 ![BLE](https://img.shields.io/badge/BLE-MyScale_KP2048B-purple)
 
-**Automatic grind-by-weight for "dumb" espresso grinders using a MyScale KP2048B scale, ESP32-C6, MQTT, and a Tasmota smart plug. (Will only work with the ESP32C6 board because of the bluetooth implementation) **
+**Automatic grind-by-weight for "dumb" espresso grinders using a MyScale KP2048B scale, ESP32-C6, MQTT, and a Tasmota smart plug. (Will only work with the ESP32C6 board because of the bluetooth implementation)**
 
 Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
 
