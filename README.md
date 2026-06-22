@@ -1,167 +1,270 @@
-# GrinderCutoff ☕
+# GrinderCutoff ☕⚖️
 
-Grind-by-weight för hemmabruk med **MyScale KP2048B**, **ESP32-C6** och en **Tasmota-styrd väggkontakt**. Kvarnen stängs av automatiskt när rätt mängd kaffe malts.
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+![ESP32-C6](https://img.shields.io/badge/ESP32-C6-blue)
+![MQTT](https://img.shields.io/badge/MQTT-enabled-orange)
+![BLE](https://img.shields.io/badge/BLE-MyScale_KP2048B-purple)
+
+**Automatic grind-by-weight for espresso grinders using a MyScale KP2048B scale, ESP32-C6, MQTT, and a Tasmota smart plug.**
+
+Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
 
 ---
 
-## Hur det fungerar
+## Features
 
-```
-MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ──MQTT──►  Tasmota-plug  ──►  Kvarn
+- ⚖️ Real-time weight monitoring over BLE
+- ☕ Automatic grinder shutoff at target dose
+- 📈 Adaptive compensation for grinder retention and fall-through
+- 🌐 Mobile-friendly web interface
+- 🔌 Works with any Tasmota-flashed smart plug
+- 🏠 Home Assistant friendly via MQTT
+- 💾 Persistent settings stored in NVS
+- 🚫 No app required during normal operation
+
+---
+
+## System Overview
+
+```text
+MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ──MQTT──►  Tasmota Plug  ──► Grinder
                                 │
-                                └──WiFi──►  Webbgränssnitt (http://grindercutoff.local)
+                                └──WiFi──► Web Interface
 ```
 
-### Flöde per malning
+## Screenshots
 
-1. Placera portafiltret på vågen och tara med **knappen på vågen**
-2. Tryck på **knappen på Tasmota-pluggen** → kvarnen startar
-3. ESP32:n detekterar via MQTT att relät slagits på och börjar övervaka vikten
-4. När vikten når **målvikt − pre-offset** skickas `cmnd/<topic>/POWER OFF` → kvarnen stannar
-5. Lyft bort portafiltret → redo för nästa malning
+Add screenshots here after your first release:
 
-Ingen app behövs under normal användning. Webbgränssnittet används bara för att justera parametrar.
-
----
-
-## Hårdvara
-
-| Komponent | Detaljer |
-|---|---|
-| Mikrokontroller | ESP32-C6 (t.ex. Seeed Studio XIAO ESP32C6) |
-| Våg | MyScale KP2048B |
-| Relä/plug | Valfri Tasmota-flashad smart plug |
-| MQTT-broker | t.ex. Mosquitto i Home Assistant |
+```markdown
+![Dashboard](docs/dashboard.png)
+![Settings](docs/settings.png)
+![Grinding](docs/grinding.png)
+```
 
 ---
 
-## Mjukvara
+## How It Works
 
-### Arduino IDE-inställningar
+1. Place the portafilter on the scale and tare it.
+2. Start the grinder using the smart plug button, Home Assistant, or another MQTT trigger.
+3. GrinderCutoff detects that grinding has started.
+4. The ESP32 continuously monitors the scale weight via BLE.
+5. When the measured weight reaches:
 
-- **Board:** `ESP32C6 Dev Module`
-- **ESP32 Arduino core:** 3.x
-- **Tools → USB CDC On Boot:** `Enabled` (krävs för Serial output)
+```text
+Target Weight - Pre-Offset
+```
 
-### Bibliotek (installera via Library Manager)
+the grinder is switched off automatically.
 
-| Bibliotek | Av |
-|---|---|
+6. The system waits for remaining grounds to fall and calculates the final dose.
+7. The adaptive algorithm refines the stop point over time.
+
+---
+
+## Hardware Requirements
+
+| Component | Example |
+|------------|---------|
+| ESP32-C6 | Seeed Studio XIAO ESP32C6 |
+| Scale | MyScale KP2048B |
+| Smart Plug | Any Tasmota-flashed plug |
+| MQTT Broker | Mosquitto |
+| WiFi Network | 2.4 GHz |
+
+---
+
+## Software Requirements
+
+### Arduino IDE
+
+Recommended:
+
+- ESP32 Arduino Core 3.x
+- Board: `ESP32C6 Dev Module`
+- USB CDC On Boot: `Enabled`
+
+### Libraries
+
+| Library | Author |
+|----------|---------|
 | PubSubClient | knolleary |
-| ESPAsyncWebServer | esphome (installera som ZIP från GitHub) |
+| ESPAsyncWebServer | ESPHome |
 
-Den inbyggda BLE-stacken (`BLEDevice`, `BLEScan`, `BLEClient`) används direkt från ESP32 Arduino core — inget extra BLE-bibliotek krävs.
+The built-in ESP32 BLE implementation is used directly.
 
 ---
 
 ## Installation
 
-### 1. Klona repot
+### Clone the Repository
 
 ```bash
-git clone https://github.com/<ditt-användarnamn>/GrinderCutoff.git
+git clone https://github.com/YOUR_USERNAME/GrinderCutoff.git
 cd GrinderCutoff
 ```
 
-### 2. Konfigurera WiFi och MQTT
-
-Öppna `GrinderCutoff.ino` och uppdatera dessa rader:
+### Configure WiFi
 
 ```cpp
-const char* WIFI_SSID     = "DIN_SSID";
-const char* WIFI_PASSWORD = "DITT_LÖSENORD";
-
-char mqttServer[64]   = "192.168.1.X";   // IP till din MQTT-broker
-char mqttUser[32]     = "";              // lämna tomt om ingen autentisering
-char mqttPass[32]     = "";
-char tasmotaTopic[64] = "tasmota_XXXXX"; // Tasmota → Information → Topic
+const char* WIFI_SSID     = "YOUR_WIFI";
+const char* WIFI_PASSWORD = "YOUR_PASSWORD";
 ```
 
-> **Tips:** Alla andra inställningar (målvikt, pre-offset, MQTT) kan ändras via webbgränssnittet efter att enheten startats — ingen ny flashning krävs.
+### Configure MQTT
 
-### 3. Flasha ESP32-C6
+```cpp
+char mqttServer[64]   = "192.168.1.10";
+char mqttUser[32]     = "";
+char mqttPass[32]     = "";
+char tasmotaTopic[64] = "grinderplug";
+```
 
-Öppna sketchen i Arduino IDE och klicka **Upload**.
+### Upload
+
+Compile and flash using Arduino IDE.
 
 ---
 
-## Webbgränssnitt
+## Web Interface
 
-När enheten startats är webbgränssnittet tillgängligt på:
+Default address:
 
-```
+```text
 http://grindercutoff.local
 ```
 
-(eller via IP-adressen som skrivs ut i serial monitor)
+### Live Status
 
-### Live-vy
+- Current weight
+- BLE connection status
+- Grinder state
+- Progress toward target weight
 
-- Aktuell vikt med tre decimalers precision
-- Tillståndsindikator: `⏸ VÄNTAR` / `🟢 MALER` / `🟠 SÄTTER SIG` / `✅ KLAR`
-- Progressbar mot målvikt
-- BLE- och relästatus
+### Adjustable Settings
 
-### Inställningar
+| Setting | Description |
+|----------|-------------|
+| Target Weight | Desired dose in grams |
+| Pre-Offset | Early stop compensation |
+| Learning Delay | Adaptive tuning parameter |
+| MQTT Settings | Broker and topic configuration |
 
-| Parameter | Beskrivning |
-|---|---|
-| **Målvikt (g)** | Vikten att sikta mot, t.ex. `18.0` |
-| **Pre-offset (g)** | Kvarnen stoppas X gram *före* målvikten för att kompensera för kaffe som fortsätter falla efter att motorn stannat. Börja med `0.5` och justera. |
-| **Lärande delay** | Justerar pre-offset automatiskt baserat på faktisk slutvikt — lär sig din kvarns "inertia" efter ett par körningar. |
-
-### MQTT-konfiguration
-
-Server, port, topic, användarnamn och lösenord ändras direkt i webbgränssnittet och sparas i NVS-minnet utan att enheten behöver flashas om.
+All settings can be modified without reflashing.
 
 ---
 
-## BLE-protokoll (MyScale KP2048B)
+## MQTT Integration
 
-Implementerat direkt utan externa bibliotek, baserat på [Zer0-bit/esp-arduino-ble-scales v4](https://github.com/Zer0-bit/esp-arduino-ble-scales/tree/v4).
+### Commands
 
-| | UUID |
-|---|---|
-| Service | `0000FFB0-0000-1000-8000-00805F9B34FB` |
-| Notify (vikt) | `0000FFB2-0000-1000-8000-00805F9B34FB` |
-| Write (tara) | `0000FFB1-0000-1000-8000-00805F9B34FB` |
-
-**Viktformat** (≥15 bytes):
-```
-Negativt: data[2] >> 4 == 0x8 eller 0xC
-Råvärde:  (data[3] & 0x0F) << 24 | data[4] << 16 | data[5] << 8 | data[6]
-Gram:     råvärde / 1000.0
+```text
+cmnd/<topic>/POWER
 ```
 
-**Tara-kommando** (20 bytes):
+### Status
+
+```text
+stat/<topic>/POWER
 ```
-AC 40 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 D2 D2
+
+Example:
+
+```text
+cmnd/grinderplug/POWER ON
+cmnd/grinderplug/POWER OFF
+```
+
+GrinderCutoff automatically reacts when the plug reports that the grinder has started.
+
+---
+
+## BLE Protocol
+
+Based on reverse engineering work from:
+
+- https://github.com/Zer0-bit/esp-arduino-ble-scales
+
+### Service UUID
+
+```text
+0000FFB0-0000-1000-8000-00805F9B34FB
+```
+
+### Weight Notification UUID
+
+```text
+0000FFB2-0000-1000-8000-00805F9B34FB
+```
+
+### Tare Command UUID
+
+```text
+0000FFB1-0000-1000-8000-00805F9B34FB
 ```
 
 ---
 
-## Tasmota-konfiguration
+## Example Workflow
 
-Enheten kommunicerar med Tasmota via MQTT med standard topic-format:
+```text
+Target weight: 18.0 g
+Pre-offset:    0.5 g
 
+Grinder stops at:
+17.5 g
+
+Final settled weight:
+18.0 g
 ```
-cmnd/<topic>/POWER   →  ON / OFF  (skicka kommando)
-stat/<topic>/POWER   →  ON / OFF  (ta emot status)
-```
-
-ESP32:n prenumererar på `stat/<topic>/POWER` och startar viktövervakning automatiskt när Tasmota rapporterar att relät slagits på — oavsett om det sker via Tasmota-pluggens fysiska knapp, en Home Assistant-automation eller webbgränssnittet.
-
-Hitta ditt Tasmota topic under: **Tasmota webbgränssnitt → Information → Topic**
 
 ---
 
-## Inspirerat av
+## Home Assistant
 
-- [GaggiMate](https://github.com/jniebuhr/gaggimate) — state machine-arkitektur och adaptiv delay-justering
-- [esp-arduino-ble-scales](https://github.com/Zer0-bit/esp-arduino-ble-scales) — MyScale BLE-protokoll
+GrinderCutoff works well alongside:
+
+- Home Assistant
+- Mosquitto MQTT Broker
+- Tasmota
+
+Typical uses:
+
+- Morning coffee automations
+- Dose monitoring
+- Smart grinder control
+- Espresso workflows
 
 ---
 
-## Licens
+## Inspired By
 
-MIT
+- GaggiMate
+  https://github.com/jniebuhr/gaggimate
+
+- ESP Arduino BLE Scales
+  https://github.com/Zer0-bit/esp-arduino-ble-scales
+
+---
+
+## Roadmap
+
+- [ ] OTA firmware updates
+- [ ] Multiple grinder profiles
+- [ ] Dose statistics
+- [ ] MQTT auto-discovery for Home Assistant
+- [ ] Web UI charts
+- [ ] Scale battery monitoring
+
+---
+
+## Contributing
+
+Issues, pull requests, testing reports, and feature suggestions are welcome.
+
+---
+
+## License
+
+Released under the MIT License.
