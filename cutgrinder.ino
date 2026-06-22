@@ -32,11 +32,11 @@ void relayTurnOn();
 
 // ─── Konfiguration ────────────────────────────────────────────────────────────
 const char* WIFI_SSID     = "Alter_3G";
-const char* WIFI_PASSWORD = "fanta8tter";
+const char* WIFI_PASSWORD = "xxx";
 
 char mqttServer[64]   = "192.168.7.58";
 char mqttUser[32]     = "duelago";
-char mqttPass[32]     = "fanta8tter";
+char mqttPass[32]     = "xxx";
 int  mqttPort         = 1883;
 char tasmotaTopic[64] = "sonoff";
 
