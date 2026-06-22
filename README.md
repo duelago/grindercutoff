@@ -18,14 +18,6 @@ Stop your grinder automatically when the desired dose is reached, without modify
 <img width="3678" height="4308" alt="scale" src="https://github.com/user-attachments/assets/f6cebcb5-3111-45fe-9a01-1c23a2f6115a" />
 
 
-## System Overview
-
-```text
-MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ──MQTT──►  Tasmota Plug  ──► Grinder
-                                │
-                                └──WiFi──► Web Interface
-```
-
 
 
 ## How It Works
@@ -38,6 +30,9 @@ MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ─�
 6. The system waits for remaining grounds to fall and calculates the final dose.
 7. The adaptive algorithm refines the stop point over time.
 
+We have some safety features. The grinder will grind for maximum 1 minute. Also make sure that the Tasmota relay always boots in OFF mode after a power failure etc. Here is the way to do it:
+
+Open your Tasmota device's Web Interface (by typing its IP address into your browser).Click on the Console button.Type the following command and press Enter:PowerOnState 0
 ---
 
 ## Hardware Requirements
