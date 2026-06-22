@@ -1,4 +1,5 @@
 # GrinderCutoff
+Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 ![ESP32-C6](https://img.shields.io/badge/ESP32-C6-blue)
@@ -9,7 +10,6 @@
 
 **(The software will only work with  ESP32-C6 microcontrollers because of different bluetooth implementations on different esp32 boards)**
 
-Stop your grinder automatically when the desired dose is reached—without modifying the grinder itself.
 
 ---
 
