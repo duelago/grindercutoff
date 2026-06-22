@@ -30,9 +30,10 @@ Stop your grinder automatically when the desired dose is reached, without modify
 6. The system waits for remaining grounds to fall and calculates the final dose.
 7. The adaptive algorithm refines the stop point over time.
 
-We have some safety features. The grinder will grind for maximum 1 minute. Also make sure that the Tasmota relay always boots in OFF mode after a power failure etc. Here is the way to do it:
-
+We have some safety features. The grinder will grind for maximum 1 minute. Also make sure that the Tasmota relay always boots in OFF mode after a power failure etc. 
+Here is the way to do it: 
 Open your Tasmota device's Web Interface (by typing its IP address into your browser).Click on the Console button.Type the following command and press Enter:PowerOnState 0
+
 ---
 
 ## Hardware Requirements
