@@ -2,18 +2,16 @@
  * GrinderCutoff - ESP32-C6 Arduino Sketch
  * =========================================
  * Reads weight from MyScale KP2048B via BLE and cuts power
- * to a Tasmota plug via MQTT when the weight reaches a preset value.
+ * to a Tasmota plug via MQTT when the target weight is reached.
  *
- * Flow:
- *   1. Place portafilter on the scale, tare using the button on the scale
- *   2. Press the Tasmota plug button → grinder starts
- *   3. ESP32 detects that the relay has turned on → starts monitoring weight
+ * Flöde:
+ *   1. Place portafilter on scale, tare with the button on the scale
+ *   2. Press the button on the Tasmota plug → grinder starts
+ *   3. ESP32 detects relay turned on → monitors weight
  *   4. At target weight → relay off → done
  *
  * Board: "ESP32C6 Dev Module", ESP32 Arduino core 3.x
- * Tools → USB CDC On Boot → Enabled for Serial output!
- *
- * Will only work with ESP32C6 due to the bluetooth stack
+ * Tools → USB CDC On Boot → Enabled för Serial output!
  */
 
 #include <WiFi.h>
@@ -25,6 +23,7 @@
 #include <BLEScan.h>
 #include <BLEClient.h>
 #include <BLERemoteCharacteristic.h>
+#include <HTTPClient.h>
 
 void savePrefs();
 void startBleScan();
@@ -33,36 +32,38 @@ void relayOff();
 void relayTurnOn();
 
 // ─── Konfiguration ────────────────────────────────────────────────────────────
-const char* WIFI_SSID     = "Alter_3G";
-const char* WIFI_PASSWORD = "xxx";
+const char* WIFI_SSID     = "SSID";
+const char* WIFI_PASSWORD = "PASSWORD";
 
 char mqttServer[64]   = "192.168.7.58";
-char mqttUser[32]     = "duelago";
-char mqttPass[32]     = "xxx";
+char mqttUser[32]     = "";
+char mqttPass[32]     = "";
 int  mqttPort         = 1883;
 char tasmotaTopic[64] = "sonoff";
+char tasmotaIP[64]    = "";    // Only with local (no mqtt) control
+bool localControl     = false; // false = MQTT (default), true = lokal HTTP
 
-float targetWeight = 18.0f;  // gram - stanna vid denna vikt
-float preoffset    = 0.5f;   // gram - stanna X gram FÖR målvikten (bälg-kompensation)
+float targetWeight = 18.0f;  // gram - total weight
+float preoffset    = 0.5f;   // gram - stop before weight (retention)
 
-// ─── Tillståndsmaskin ─────────────────────────────────────────────────────────
+// ─── State ─────────────────────────────────────────────────────────
 enum GrindState {
-  STATE_IDLE,      // Väntar - relä av
-  STATE_GRINDING,  // Maler - relä på, övervakar vikt
-  STATE_SETTLING,  // Klart - väntar på att vikten stabiliseras
-  STATE_DONE       // Färdig - väntar på att portafiltret lyfts
+  STATE_IDLE,      // Waiting - relay off
+  STATE_GRINDING,  // Grinding - relay on, checking weight
+  STATE_SETTLING,  // Settling - Waiting for weight stabilisation
+  STATE_DONE       // Finished - Everything completed
 };
 
 GrindState    grindState     = STATE_IDLE;
 unsigned long stateEnterTime = 0;
-unsigned long settleTimeout  = 3000;  // ms att vänta i SETTLING
+unsigned long settleTimeout  = 3000;  // ms of waiting in SETTLING
 
 float   currentWeight  = 0.0f;
 bool    relayOn        = false;
 bool    scalesConnected = false;
 unsigned long lastWeightTime = 0;
 
-// Statistics
+// Stats
 float lastActualWeight = 0.0f;
 int   grindCount       = 0;
 float grindDelay       = 300.0f;
@@ -72,8 +73,9 @@ bool  delayAdjust      = true;
 #define MYSCALE_SERVICE_UUID  "0000ffb0-0000-1000-8000-00805f9b34fb"
 #define MYSCALE_NOTIFY_UUID   "0000ffb2-0000-1000-8000-00805f9b34fb"
 #define MYSCALE_WRITE_UUID    "0000ffb1-0000-1000-8000-00805f9b34fb"
+#define GRIND_SAFETY_MS       60000UL   // max malmingstid - säkerhetsbrytare
 
-// Tara-kommando från myscale.cpp (Zer0-bit v4)
+// Tare-command från myscale.cpp (Zer0-bit v4)
 static const uint8_t TARE_CMD[] = {
   0xAC, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -102,13 +104,46 @@ void enterState(GrindState newState) {
   Serial.printf("[STATE] → %s\n", names[newState]);
 }
 
-// ─── MQTT ─────────────────────────────────────────────────────────────────────
+// ─── Tasmota (MQTT or local HTTP) ─────────────────────────────────
 void sendTasmotaCommand(const char* cmd) {
-  if (!mqttClient.connected()) return;
-  char topic[80];
-  snprintf(topic, sizeof(topic), "cmnd/%s/POWER", tasmotaTopic);
-  mqttClient.publish(topic, cmd);
-  Serial.printf("[MQTT→] %s: %s\n", topic, cmd);
+  if (localControl) {
+    // Lokal HTTP: GET http://<tasmota-ip>/cm?cmnd=Power%20ON
+    if (strlen(tasmotaIP) == 0) { Serial.println("[LOCAL] No Tasmota IP configured!"); return; }
+    char url[128];
+    snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power%%20%s", tasmotaIP, cmd);
+    HTTPClient http;
+    http.begin(url);
+    int code = http.GET();
+    Serial.printf("[LOCAL] %s → HTTP %d\n", url, code);
+    http.end();
+  } else {
+    if (!mqttClient.connected()) return;
+    char topic[80];
+    snprintf(topic, sizeof(topic), "cmnd/%s/POWER", tasmotaTopic);
+    mqttClient.publish(topic, cmd);
+    Serial.printf("[MQTT→] %s: %s\n", topic, cmd);
+  }
+}
+
+// Local polling. Ask Tasmota for relay state via HTTP
+// Called in loop() when localControl is true
+bool fetchLocalRelayState() {
+  if (strlen(tasmotaIP) == 0) return false;
+  char url[128];
+  snprintf(url, sizeof(url), "http://%s/cm?cmnd=Power", tasmotaIP);
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(500);
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    // Tasmota svarar med {"POWER":"ON"} eller {"POWER":"OFF"}
+    bool isOn = body.indexOf("\"ON\"") >= 0;
+    http.end();
+    return isOn;
+  }
+  http.end();
+  return relayOn; // vid fel, behåll nuvarande läge
 }
 
 void relayOff() {
@@ -123,7 +158,7 @@ void relayTurnOn() {
   Serial.println("[RELAY] ON");
 }
 
-// ─── Vikthantering ────────────────────────────────────────────────────────────
+// ─── Weight ────────────────────────────────────────────────────────────
 void onWeightReceived(float weight) {
   currentWeight  = weight;
   lastWeightTime = millis();
@@ -149,7 +184,7 @@ void onWeightReceived(float weight) {
     case STATE_DONE:
       // Portafilter lyft → redo för nästa malning
       if (weight < -1.0f) {
-        Serial.println("[AUTO] Portafilter lyft - redo för ny malning");
+        Serial.println("[AUTO] Portafilter removed - ready for next grind");
         enterState(STATE_IDLE);
       }
       break;
@@ -172,7 +207,7 @@ void notifyCallback(BLERemoteCharacteristic* c, uint8_t* data, size_t length, bo
   onWeightReceived(weight);
 }
 
-// ─── BLE: tara ───────────────────────────────────────────────────────────────
+// ─── BLE: tare ───────────────────────────────────────────────────────────────
 void bleTare() {
   if (writeChar && scalesConnected) {
     writeChar->writeValue((uint8_t*)TARE_CMD, sizeof(TARE_CMD), false);
@@ -192,7 +227,7 @@ void startBleScan() {
   Serial.println("[BLE]  Scanning 5s...");
 }
 
-// ─── BLE: anslutning ─────────────────────────────────────────────────────────
+// ─── BLE: connection ─────────────────────────────────────────────────────────
 bool connectToScale() {
   if (!foundDevice) return false;
   Serial.printf("[BLE]  Connecting to %s...\n", foundDevice->getAddress().toString().c_str());
@@ -203,15 +238,15 @@ bool connectToScale() {
     Serial.println("[BLE]  ✗ Failed");
     return false;
   }
-  Serial.println("[BLE]  ✓ Connected, hämtar tjänster...");
+  Serial.println("[BLE]  ✓ Connected, fetching services...");
   delay(200);
 
   BLERemoteService* svc = bleClient->getService(MYSCALE_SERVICE_UUID);
-  if (!svc) { Serial.println("[BLE]  ✗ Service FFB0 missing"); bleClient->disconnect(); return false; }
+  if (!svc) { Serial.println("[BLE]  ✗ Service FFB0 not found"); bleClient->disconnect(); return false; }
 
   notifyChar = svc->getCharacteristic(MYSCALE_NOTIFY_UUID);
   writeChar  = svc->getCharacteristic(MYSCALE_WRITE_UUID);
-  if (!notifyChar || !writeChar) { Serial.println("[BLE]  ✗ Karakteristik missing"); bleClient->disconnect(); return false; }
+  if (!notifyChar || !writeChar) { Serial.println("[BLE]  ✗ Characteristic not found"); bleClient->disconnect(); return false; }
 
   if (!notifyChar->canNotify()) { Serial.println("[BLE]  ✗ Notify not supported"); bleClient->disconnect(); return false; }
   notifyChar->registerForNotify(notifyCallback, true);
@@ -236,13 +271,13 @@ class MyScanCallbacks : public BLEAdvertisedDeviceCallbacks {
     }
     if (!found && device.haveServiceUUID() &&
         device.isAdvertisingService(BLEUUID(MYSCALE_SERVICE_UUID))) {
-      Serial.println("\n[BLE]  Found via service UUID");
+      Serial.println("\n[BLE]  Found by service UUID");
       found = true;
     }
     if (!found) {
       String mac = String(device.getAddress().toString().c_str());
       mac.toLowerCase();
-      if (mac == "d0:4d:00:6e:2a:91") { Serial.println("\n[BLE]  Found via MAC"); found = true; }
+      if (mac == "d0:4d:00:6e:2a:91") { Serial.println("\n[BLE]  Found by MAC"); found = true; }
     }
     if (found && !deviceFound) {
       bleScan->stop();
@@ -259,11 +294,11 @@ void adjustDelay(float actual, float target) {
   float error = actual - target;
   float adj   = constrain(error * 50.0f, -500.0f, 500.0f);
   grindDelay  = constrain(grindDelay + adj, 0.0f, 3000.0f);
-  Serial.printf("[ADAPT] Faktisk=%.2fg Mål=%.2fg → delay=%.0fms\n", actual, target, grindDelay);
+  Serial.printf("[ADAPT] Actual=%.2fg Target=%.2fg → delay=%.0fms\n", actual, target, grindDelay);
   prefs.begin("grinder", false); prefs.putFloat("grindDelay", grindDelay); prefs.end();
 }
 
-// ─── Spara / ladda ───────────────────────────────────────────────────────────
+// ─── Save / load ───────────────────────────────────────────────────────────
 void savePrefs() {
   prefs.begin("grinder", false);
   prefs.putFloat("targetW",    targetWeight);
@@ -276,6 +311,8 @@ void savePrefs() {
   prefs.putString("mqttPass",   mqttPass);
   prefs.putString("tasmotaTpc", tasmotaTopic);
   prefs.putInt("mqttPort",      mqttPort);
+  prefs.putString("tasmotaIP",  tasmotaIP);
+  prefs.putBool("localCtrl",    localControl);
   prefs.end();
 }
 
@@ -290,10 +327,14 @@ void loadPrefs() {
   prefs.getString("mqttUser",   mqttUser,     sizeof(mqttUser));
   prefs.getString("mqttPass",   mqttPass,     sizeof(mqttPass));
   prefs.getString("tasmotaTpc", tasmotaTopic, sizeof(tasmotaTopic));
-  mqttPort = prefs.getInt("mqttPort", 1883);
+  mqttPort     = prefs.getInt("mqttPort", 1883);
+  prefs.getString("tasmotaIP",  tasmotaIP,    sizeof(tasmotaIP));
+  localControl = prefs.getBool("localCtrl",   false);
   prefs.end();
   Serial.printf("[PREFS] target=%.1f pre=%.1f count=%d\n", targetWeight, preoffset, grindCount);
-  Serial.printf("[PREFS] MQTT=%s:%d topic=%s\n", mqttServer, mqttPort, tasmotaTopic);
+  Serial.printf("[PREFS] Mode: %s\n", localControl ? "LOCAL HTTP" : "MQTT");
+  if (localControl) Serial.printf("[PREFS] Tasmota IP: %s\n", tasmotaIP);
+  else Serial.printf("[PREFS] MQTT=%s:%d topic=%s\n", mqttServer, mqttPort, tasmotaTopic);
 }
 
 // ─── MQTT callbacks ───────────────────────────────────────────────────────────
@@ -302,24 +343,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
   for (unsigned int i = 0; i < len; i++) msg += (char)payload[i];
   Serial.printf("[MQTT←] %s: %s\n", topic, msg.c_str());
 
-  // Tasmota stat-topic: "ON" eller "OFF"
+  // Tasmota stat-topic: "ON" or "OFF"
   String statTopic = "stat/";
   statTopic += tasmotaTopic;
   statTopic += "/POWER";
 
   if (String(topic) == statTopic) {
     if (msg == "ON" && !relayOn) {
-      // Relayt slogs på externt (knapp på Tasmota-pluggen)
+      // Relät slogs på externt (knapp på Tasmota-pluggen)
       relayOn = true;
       if (grindState == STATE_IDLE && scalesConnected) {
-        Serial.println("[AUTO] Relay ON detekterat → starting viktövervakning");
+        Serial.println("[AUTO] Relay ON detected → starting weight monitoring");
         enterState(STATE_GRINDING);
       }
     } else if (msg == "OFF") {
       relayOn = false;
       // Om vi är i GRINDING och relät stängdes av externt → gå till DONE
       if (grindState == STATE_GRINDING) {
-        Serial.println("[AUTO] Relay OFF externt under malning → DONE");
+        Serial.println("[AUTO] Relay OFF externally during grind → DONE");
         lastActualWeight = currentWeight;
         enterState(STATE_DONE);
       }
@@ -335,13 +376,17 @@ void mqttReconnect() {
     ? mqttClient.connect(id.c_str(), mqttUser, mqttPass)
     : mqttClient.connect(id.c_str());
   if (ok) {
-    // Prenumerera på både stat (status från Tasmota) och cmnd/# för bekräftelse
     char t[80];
     snprintf(t, sizeof(t), "stat/%s/POWER", tasmotaTopic);
     mqttClient.subscribe(t);
-    Serial.printf("[MQTT] ✓ Connected! Prenumererar på: %s\n", t);
-    // Be Tasmota rapportera nuvarande status
-    sendTasmotaCommand(""); // tom payload = status-förfrågan
+    Serial.printf("[MQTT] ✓ Connected! Subscribing to: %s\n", t);
+    // Säkerhet vid uppstart/återanslutning: säkerställ att relät är av
+    static bool bootOffSent = false;
+    if (!bootOffSent) {
+      Serial.println("[SAFETY] Boot - sending OFF to Tasmota (MQTT)");
+      sendTasmotaCommand("OFF");
+      bootOffSent = true;
+    }
   } else {
     Serial.printf("[MQTT] ✗ Failed (rc=%d)\n", mqttClient.state());
   }
@@ -408,9 +453,9 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <h2>Statistics</h2>
+    <h2>Statistik</h2>
     <table class="stat-table">
-      <tr><td>Number of grinds</td><td id="grindCount">0</td></tr>
+      <tr><td>Grind count</td><td id="grindCount">0</td></tr>
       <tr><td>Last final weight</td><td id="lastActual">–</td></tr>
       <tr><td>Stop weight (target − offset)</td><td id="stopAtVal">–</td></tr>
       <tr><td>Learned delay</td><td id="grindDelay">–</td></tr>
@@ -425,34 +470,51 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       <div><label>Pre-offset (g) 🔧</label>
         <input type="number" id="preoffset" step="0.1" min="0" value="0.5"></div>
     </div>
-    <div class="toggle-row"><label>Adaptive delay adjustment</label>
+    <div class="toggle-row"><label>Adaptive delay</label>
       <input type="checkbox" id="delayAdjust" checked></div>
     <button class="btn-save" onclick="saveSettings()">💾 Save settings</button>
     <div class="msg" id="saveMsg"></div>
   </div>
 
   <div class="card">
-    <h2>MQTT / Tasmota</h2>
-    <label>MQTT-server (IP)</label>
-    <input type="text" id="mqttServer" placeholder="192.168.1.X">
-    <div class="row">
-      <div><label>Port</label>
-        <input type="number" id="mqttPort" value="1883" min="1" max="65535"></div>
-      <div><label>Tasmota topic</label>
-        <input type="text" id="tasmotaTopic" placeholder="sonoff"></div>
+    <h2>Connection / Tasmota</h2>
+    <div class="toggle-row">
+      <label>🏠 Local control (no MQTT broker)</label>
+      <input type="checkbox" id="localControl" onchange="updateMode()">
     </div>
-    <div class="row">
-      <div><label>Username</label>
-        <input type="text" id="mqttUser" placeholder="(tomt = ingen auth)"></div>
-      <div><label>Password</label>
-        <input type="password" id="mqttPass" placeholder="(tomt = ingen auth)"></div>
+
+    <div id="localSection" style="display:none">
+      <label>Tasmota IP address</label>
+      <input type="text" id="tasmotaIP" placeholder="192.168.1.X">
+      <p style="font-size:.8em;color:#888;margin:0 0 12px">
+        ESP32 polls Tasmota directly via HTTP. Works without an MQTT broker.
+        Start grinding with the button on the Tasmota plug as usual.
+      </p>
     </div>
-    <button class="btn-save" onclick="saveMqtt()">💾 Save MQTT</button>
+
+    <div id="mqttSection">
+      <label>MQTT server (IP)</label>
+      <input type="text" id="mqttServer" placeholder="192.168.1.X">
+      <div class="row">
+        <div><label>Port</label>
+          <input type="number" id="mqttPort" value="1883" min="1" max="65535"></div>
+        <div><label>Tasmota topic</label>
+          <input type="text" id="tasmotaTopic" placeholder="sonoff"></div>
+      </div>
+      <div class="row">
+        <div><label>Username</label>
+          <input type="text" id="mqttUser" placeholder="(empty = no auth)"></div>
+        <div><label>Password</label>
+          <input type="password" id="mqttPass" placeholder="(empty = no auth)"></div>
+      </div>
+    </div>
+
+    <button class="btn-save" onclick="saveMqtt()">💾 Save connection</button>
     <div class="msg" id="mqttMsg"></div>
   </div>
 
   <div class="card">
-    <h2>Manual control</h2>
+    <h2>Manuell kontroll</h2>
     <button class="btn-relay" onclick="toggleRelay()">⚡ Toggle relay</button>
     <button class="btn-tare"  onclick="tare()">⚖️ Tare scale (via web)</button>
     <div class="msg" id="ctrlMsg"></div>
@@ -468,12 +530,18 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   const STATE_COLORS = {
     'IDLE':'#444','GRINDING':'#2a7a4b','SETTLING':'#7a5500','DONE':'#0f5c3a'
   };
-  const mqttFields = ['mqttServer','mqttPort','tasmotaTopic','mqttUser','mqttPass'];
+  const mqttFields = ['mqttServer','mqttPort','tasmotaTopic','mqttUser','mqttPass','tasmotaIP'];
   function mqttCardFocused() { return mqttFields.includes(document.activeElement.id); }
+
+  function updateMode() {
+    const local = document.getElementById('localControl').checked;
+    document.getElementById('localSection').style.display = local ? 'block' : 'none';
+    document.getElementById('mqttSection').style.display  = local ? 'none'  : 'block';
+  }
 
   function fetchStatus() {
     fetch('/status').then(r=>r.json()).then(d=>{
-      document.getElementById('weightVal').textContent = d.weight.toFixed(3)+' g';
+      document.getElementById('weightVal').textContent = d.weight.toFixed(1)+' g';
       const pct = Math.min(100, Math.max(0, d.weight / Math.max(0.01, d.stopAt) * 100));
       document.getElementById('progressBar').style.width = pct+'%';
       document.getElementById('bleBadge').textContent  = d.ble ? 'BLE: ✓' : 'BLE: searching...';
@@ -484,17 +552,20 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       sb.textContent = STATES[d.state] || d.state;
       sb.style.background = STATE_COLORS[d.state] || '#333';
       document.getElementById('grindCount').textContent  = d.grindCount;
-      document.getElementById('lastActual').textContent  = d.lastActual > 0 ? d.lastActual.toFixed(3)+' g' : '–';
+      document.getElementById('lastActual').textContent  = d.lastActual > 0 ? d.lastActual.toFixed(1)+' g' : '–';
       document.getElementById('stopAtVal').textContent   = d.stopAt.toFixed(1)+' g';
       document.getElementById('grindDelay').textContent  = d.grindDelay.toFixed(0)+' ms';
       document.getElementById('targetWeight').value = d.targetWeight;
       document.getElementById('preoffset').value    = d.preoffset;
       document.getElementById('delayAdjust').checked= d.delayAdjust;
       if (!mqttCardFocused()) {
-        document.getElementById('mqttServer').value   = d.mqttServer;
-        document.getElementById('mqttPort').value     = d.mqttPort;
-        document.getElementById('tasmotaTopic').value = d.tasmotaTopic;
-        document.getElementById('mqttUser').value     = d.mqttUser;
+        document.getElementById('localControl').checked  = d.localControl;
+        document.getElementById('tasmotaIP').value       = d.tasmotaIP || '';
+        document.getElementById('mqttServer').value      = d.mqttServer;
+        document.getElementById('mqttPort').value        = d.mqttPort;
+        document.getElementById('tasmotaTopic').value    = d.tasmotaTopic;
+        document.getElementById('mqttUser').value        = d.mqttUser;
+        updateMode();
       }
     }).catch(()=>{});
   }
@@ -512,6 +583,8 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   }
   function saveMqtt(){
     const b = new URLSearchParams({
+      localControl: document.getElementById('localControl').checked?'1':'0',
+      tasmotaIP:    document.getElementById('tasmotaIP').value,
       mqttServer:   document.getElementById('mqttServer').value,
       mqttPort:     document.getElementById('mqttPort').value,
       tasmotaTopic: document.getElementById('tasmotaTopic').value,
@@ -552,11 +625,13 @@ void setupWebServer() {
       "\"stopAt\":%.1f,\"relay\":%s,\"ble\":%s,"
       "\"state\":\"%s\",\"grindCount\":%d,\"grindDelay\":%.1f,"
       "\"lastActual\":%.3f,\"delayAdjust\":%s,"
+      "\"localControl\":%s,\"tasmotaIP\":\"%s\","
       "\"mqttServer\":\"%s\",\"mqttPort\":%d,\"tasmotaTopic\":\"%s\",\"mqttUser\":\"%s\"}",
       currentWeight, targetWeight, preoffset, stopAt(),
       relayOn?"true":"false", scalesConnected?"true":"false",
       sn[grindState], grindCount, grindDelay, lastActualWeight,
       delayAdjust?"true":"false",
+      localControl?"true":"false", tasmotaIP,
       mqttServer, mqttPort, tasmotaTopic, mqttUser);
     r->send(200,"application/json",json);
   });
@@ -566,20 +641,24 @@ void setupWebServer() {
     if (r->hasParam("preoffset",true))    preoffset    = r->getParam("preoffset",true)->value().toFloat();
     if (r->hasParam("delayAdjust",true))  delayAdjust  = r->getParam("delayAdjust",true)->value()=="1";
     savePrefs();
-    r->send(200,"text/plain","✓ Settings sparade");
+    r->send(200,"text/plain","✓ Settings saved");
   });
 
   webServer.on("/mqtt", HTTP_POST, [](AsyncWebServerRequest* r){
+    if (r->hasParam("localControl",true)) localControl  = r->getParam("localControl",true)->value()=="1";
+    if (r->hasParam("tasmotaIP",true))    strlcpy(tasmotaIP,    r->getParam("tasmotaIP",true)->value().c_str(),    sizeof(tasmotaIP));
     if (r->hasParam("mqttServer",true))   strlcpy(mqttServer,   r->getParam("mqttServer",true)->value().c_str(),   sizeof(mqttServer));
     if (r->hasParam("tasmotaTopic",true)) strlcpy(tasmotaTopic, r->getParam("tasmotaTopic",true)->value().c_str(), sizeof(tasmotaTopic));
     if (r->hasParam("mqttUser",true))     strlcpy(mqttUser,     r->getParam("mqttUser",true)->value().c_str(),     sizeof(mqttUser));
     if (r->hasParam("mqttPass",true))     strlcpy(mqttPass,     r->getParam("mqttPass",true)->value().c_str(),     sizeof(mqttPass));
     if (r->hasParam("mqttPort",true))     mqttPort = r->getParam("mqttPort",true)->value().toInt();
     savePrefs();
-    mqttClient.disconnect();
-    mqttClient.setServer(mqttServer, mqttPort);
-    Serial.printf("[MQTT] Ny config: %s:%d topic=%s\n", mqttServer, mqttPort, tasmotaTopic);
-    r->send(200,"text/plain","✓ MQTT saved — reconnecting...");
+    if (!localControl) {
+      mqttClient.disconnect();
+      mqttClient.setServer(mqttServer, mqttPort);
+    }
+    Serial.printf("[CFG] Mode: %s\n", localControl ? "LOCAL HTTP" : "MQTT");
+    r->send(200,"text/plain", localControl ? "✓ Local control enabled" : "✓ MQTT saved — reconnecting...");
   });
 
   webServer.on("/relay/toggle", HTTP_GET, [](AsyncWebServerRequest* r){
@@ -617,18 +696,31 @@ void setup() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries < 20) {
-    delay(500); Serial.printf("[WiFi] Försök %d/20...\n", tries+1); tries++;
+    delay(500); Serial.printf("[WiFi] Attempt %d/20...\n", tries+1); tries++;
   }
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("[WiFi] ✓ IP: %s  Signal: %d dBm\n",
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
     if (MDNS.begin("grindercutoff")) Serial.println("[mDNS] ✓ http://grindercutoff.local");
+
+    // Säkerhet vid uppstart: säkerställ att relät är av oavsett tidigare tillstånd
+    // Skickas direkt utan att vänta på MQTT-anslutning (gäller lokal HTTP)
+    // MQTT-versionen skickas efter mqttReconnect() nedan
+    if (localControl && strlen(tasmotaIP) > 0) {
+      Serial.println("[SAFETY] Boot - sending OFF to Tasmota (local HTTP)");
+      sendTasmotaCommand("OFF");
+    }
   } else {
     Serial.println("[WiFi] ✗ Failed");
   }
 
-  mqttClient.setServer(mqttServer, mqttPort);
-  mqttClient.setCallback(mqttCallback);
+  if (!localControl) {
+    mqttClient.setServer(mqttServer, mqttPort);
+    mqttClient.setCallback(mqttCallback);
+    Serial.printf("[MQTT] Broker: %s:%d  Topic: cmnd/%s/POWER\n", mqttServer, mqttPort, tasmotaTopic);
+  } else {
+    Serial.printf("[LOCAL] Tasmota IP: %s\n", tasmotaIP);
+  }
 
   setupWebServer();
   Serial.println("[Web]  ✓ http://grindercutoff.local");
@@ -643,19 +735,45 @@ void setup() {
 
   enterState(STATE_IDLE);
   Serial.println("----------------------------------------");
-  Serial.println("  Ready! Tara vågen och tryck på pluggen.");
+  Serial.println("  Ready! Tare the scale and press the plug button.");
   Serial.println("----------------------------------------");
 }
 
 // ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
-  // MQTT
+  // MQTT eller lokal HTTP-polling
   if (WiFi.status() == WL_CONNECTED) {
-    if (!mqttClient.connected()) {
-      static unsigned long lastAttempt = 0;
-      if (millis() - lastAttempt > 5000) { lastAttempt = millis(); mqttReconnect(); }
+    if (!localControl) {
+      // MQTT-läge: håll anslutning vid liv
+      if (!mqttClient.connected()) {
+        static unsigned long lastAttempt = 0;
+        if (millis() - lastAttempt > 5000) { lastAttempt = millis(); mqttReconnect(); }
+      }
+      mqttClient.loop();
+    } else {
+      // Lokal HTTP-läge: polla Tasmota var 500ms för att detektera manuell knapptryckning
+      static unsigned long lastPoll = 0;
+      if (millis() - lastPoll > 500) {
+        lastPoll = millis();
+        bool newState = fetchLocalRelayState();
+        if (newState && !relayOn) {
+          // Relät slogs på (knapp på pluggen)
+          relayOn = true;
+          if (grindState == STATE_IDLE && scalesConnected) {
+            Serial.println("[LOCAL] Relay ON detected → starting weight monitoring");
+            enterState(STATE_GRINDING);
+          }
+        } else if (!newState && relayOn) {
+          // Relät stängdes av externt
+          relayOn = false;
+          if (grindState == STATE_GRINDING) {
+            Serial.println("[LOCAL] Relay OFF externally → DONE");
+            lastActualWeight = currentWeight;
+            enterState(STATE_DONE);
+          }
+        }
+      }
     }
-    mqttClient.loop();
   }
 
   // BLE scan/anslutning
@@ -676,7 +794,7 @@ void loop() {
     }
   } else if (scalesConnected) {
     if (!bleClient || !bleClient->isConnected()) {
-      Serial.println("[BLE]  Connection lost - searching again...");
+      Serial.println("[BLE]  Lost connection - scanning again...");
       scalesConnected = false;
       notifyChar = nullptr; writeChar = nullptr;
       if (grindState == STATE_GRINDING) { relayOff(); enterState(STATE_IDLE); }
@@ -691,8 +809,16 @@ void loop() {
     adjustDelay(currentWeight, targetWeight);
     grindCount++;
     savePrefs();
-    Serial.printf("[DONE] Slutvikt: %.3fg (mål: %.1fg) - malning #%d\n",
+    Serial.printf("[DONE] Final weight: %.3fg (target: %.1fg) - grind #%d\n",
                   currentWeight, targetWeight, grindCount);
+    enterState(STATE_DONE);
+  }
+
+  // Säkerhetsbrytare: stäng av relät om malningen pågått längre än GRIND_SAFETY_MS
+  if (grindState == STATE_GRINDING && millis() - stateEnterTime > GRIND_SAFETY_MS) {
+    Serial.println("[SAFETY] ⚠ Grind exceeded 60s - forcing relay OFF!");
+    relayOff();
+    lastActualWeight = currentWeight;
     enterState(STATE_DONE);
   }
 
