@@ -26,7 +26,7 @@ You need to install the ESP32 close to your grinder. The ESP32 speaks bluetooth 
 2. Start the grinder using the smart plug button.
 3. GrinderCutoff detects that grinding has started.
 4. The ESP32 continuously monitors the scale weight via BLE.
-5. When the measured weight reaches Target Weightthe grinder is switched off automatically.
+5. When the measured weight reaches Target Weight, the grinder switches off automatically.
 6. The system waits for remaining grounds to fall and calculates the final dose.
 7. The adaptive algorithm refines the stop point over time.
 
