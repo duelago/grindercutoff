@@ -6,7 +6,7 @@
  *
  * Flöde:
  *   1. Placera portafilter på vågen, tara med knapp på vågen
- *   2. Tryck på Tasmota-pluggens knapp → kvarnen startar
+ *   2. Tryck på Tasmota-pluggens knapp → kvarnen starting
  *   3. ESP32 detekterar att relät slagits på → övervakar vikten
  *   4. Vid målvikt → relä av → klart
  *
@@ -32,11 +32,11 @@ void relayTurnOn();
 
 // ─── Konfiguration ────────────────────────────────────────────────────────────
 const char* WIFI_SSID     = "Alter_3G";
-const char* WIFI_PASSWORD = "xxx";
+const char* WIFI_PASSWORD = "fanta8tter";
 
 char mqttServer[64]   = "192.168.7.58";
 char mqttUser[32]     = "duelago";
-char mqttPass[32]     = "xxx";
+char mqttPass[32]     = "fanta8tter";
 int  mqttPort         = 1883;
 char tasmotaTopic[64] = "sonoff";
 
@@ -60,7 +60,7 @@ bool    relayOn        = false;
 bool    scalesConnected = false;
 unsigned long lastWeightTime = 0;
 
-// Statistik
+// Statistics
 float lastActualWeight = 0.0f;
 int   grindCount       = 0;
 float grindDelay       = 300.0f;
@@ -174,7 +174,7 @@ void notifyCallback(BLERemoteCharacteristic* c, uint8_t* data, size_t length, bo
 void bleTare() {
   if (writeChar && scalesConnected) {
     writeChar->writeValue((uint8_t*)TARE_CMD, sizeof(TARE_CMD), false);
-    Serial.println("[BLE]  Tara skickat");
+    Serial.println("[BLE]  Tare sent");
   }
 }
 
@@ -193,31 +193,31 @@ void startBleScan() {
 // ─── BLE: anslutning ─────────────────────────────────────────────────────────
 bool connectToScale() {
   if (!foundDevice) return false;
-  Serial.printf("[BLE]  Ansluter till %s...\n", foundDevice->getAddress().toString().c_str());
+  Serial.printf("[BLE]  Connecting to %s...\n", foundDevice->getAddress().toString().c_str());
 
   if (bleClient) { delete bleClient; bleClient = nullptr; }
   bleClient = BLEDevice::createClient();
   if (!bleClient->connect(foundDevice)) {
-    Serial.println("[BLE]  ✗ Misslyckades");
+    Serial.println("[BLE]  ✗ Failed");
     return false;
   }
-  Serial.println("[BLE]  ✓ Ansluten, hämtar tjänster...");
+  Serial.println("[BLE]  ✓ Connected, hämtar tjänster...");
   delay(200);
 
   BLERemoteService* svc = bleClient->getService(MYSCALE_SERVICE_UUID);
-  if (!svc) { Serial.println("[BLE]  ✗ Tjänst FFB0 saknas"); bleClient->disconnect(); return false; }
+  if (!svc) { Serial.println("[BLE]  ✗ Service FFB0 missing"); bleClient->disconnect(); return false; }
 
   notifyChar = svc->getCharacteristic(MYSCALE_NOTIFY_UUID);
   writeChar  = svc->getCharacteristic(MYSCALE_WRITE_UUID);
-  if (!notifyChar || !writeChar) { Serial.println("[BLE]  ✗ Karakteristik saknas"); bleClient->disconnect(); return false; }
+  if (!notifyChar || !writeChar) { Serial.println("[BLE]  ✗ Karakteristik missing"); bleClient->disconnect(); return false; }
 
-  if (!notifyChar->canNotify()) { Serial.println("[BLE]  ✗ Notify stöds ej"); bleClient->disconnect(); return false; }
+  if (!notifyChar->canNotify()) { Serial.println("[BLE]  ✗ Notify not supported"); bleClient->disconnect(); return false; }
   notifyChar->registerForNotify(notifyCallback, true);
-  Serial.println("[BLE]  ✓ Notifikationer registrerade");
+  Serial.println("[BLE]  ✓ Notifications registered");
   delay(300);
 
   scalesConnected = true;
-  Serial.println("[BLE]  ✓ Redo!");
+  Serial.println("[BLE]  ✓ Ready!");
   return true;
 }
 
@@ -228,19 +228,19 @@ class MyScanCallbacks : public BLEAdvertisedDeviceCallbacks {
     if (device.haveName()) {
       String name = device.getName().c_str();
       if (name == "MY_SCALE" || name == "my_scale" || name == "blackcoffee") {
-        Serial.printf("\n[BLE]  Hittad: \"%s\"\n", name.c_str());
+        Serial.printf("\n[BLE]  Found: \"%s\"\n", name.c_str());
         found = true;
       }
     }
     if (!found && device.haveServiceUUID() &&
         device.isAdvertisingService(BLEUUID(MYSCALE_SERVICE_UUID))) {
-      Serial.println("\n[BLE]  Hittad via service UUID");
+      Serial.println("\n[BLE]  Found via service UUID");
       found = true;
     }
     if (!found) {
       String mac = String(device.getAddress().toString().c_str());
       mac.toLowerCase();
-      if (mac == "d0:4d:00:6e:2a:91") { Serial.println("\n[BLE]  Hittad via MAC"); found = true; }
+      if (mac == "d0:4d:00:6e:2a:91") { Serial.println("\n[BLE]  Found via MAC"); found = true; }
     }
     if (found && !deviceFound) {
       bleScan->stop();
@@ -307,17 +307,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
 
   if (String(topic) == statTopic) {
     if (msg == "ON" && !relayOn) {
-      // Relät slogs på externt (knapp på Tasmota-pluggen)
+      // Relayt slogs på externt (knapp på Tasmota-pluggen)
       relayOn = true;
       if (grindState == STATE_IDLE && scalesConnected) {
-        Serial.println("[AUTO] Relä PÅ detekterat → startar viktövervakning");
+        Serial.println("[AUTO] Relay ON detekterat → starting viktövervakning");
         enterState(STATE_GRINDING);
       }
     } else if (msg == "OFF") {
       relayOn = false;
       // Om vi är i GRINDING och relät stängdes av externt → gå till DONE
       if (grindState == STATE_GRINDING) {
-        Serial.println("[AUTO] Relä AV externt under malning → DONE");
+        Serial.println("[AUTO] Relay OFF externt under malning → DONE");
         lastActualWeight = currentWeight;
         enterState(STATE_DONE);
       }
@@ -327,7 +327,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
 
 void mqttReconnect() {
   if (mqttClient.connected()) return;
-  Serial.printf("[MQTT] Ansluter till %s:%d...\n", mqttServer, mqttPort);
+  Serial.printf("[MQTT] Connecting to %s:%d...\n", mqttServer, mqttPort);
   String id = "GrinderCutoff-" + String(random(0xffff), HEX);
   bool ok = strlen(mqttUser) > 0
     ? mqttClient.connect(id.c_str(), mqttUser, mqttPass)
@@ -337,11 +337,11 @@ void mqttReconnect() {
     char t[80];
     snprintf(t, sizeof(t), "stat/%s/POWER", tasmotaTopic);
     mqttClient.subscribe(t);
-    Serial.printf("[MQTT] ✓ Ansluten! Prenumererar på: %s\n", t);
+    Serial.printf("[MQTT] ✓ Connected! Prenumererar på: %s\n", t);
     // Be Tasmota rapportera nuvarande status
     sendTasmotaCommand(""); // tom payload = status-förfrågan
   } else {
-    Serial.printf("[MQTT] ✗ Misslyckades (rc=%d)\n", mqttClient.state());
+    Serial.printf("[MQTT] ✗ Failed (rc=%d)\n", mqttClient.state());
   }
 }
 
@@ -400,32 +400,32 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     </div>
     <div class="pw"><div class="pb" id="progressBar" style="width:0%"></div></div>
     <div class="status-row">
-      <span class="badge ble-err" id="bleBadge">BLE: söker...</span>
-      <span class="badge rel-off" id="relayBadge">Relä: AV</span>
+      <span class="badge ble-err" id="bleBadge">BLE: searching...</span>
+      <span class="badge rel-off" id="relayBadge">Relay: OFF</span>
     </div>
   </div>
 
   <div class="card">
-    <h2>Statistik</h2>
+    <h2>Statistics</h2>
     <table class="stat-table">
-      <tr><td>Antal malningar</td><td id="grindCount">0</td></tr>
-      <tr><td>Senaste slutvikt</td><td id="lastActual">–</td></tr>
-      <tr><td>Stoppvikt (mål − offset)</td><td id="stopAtVal">–</td></tr>
-      <tr><td>Lärd delay</td><td id="grindDelay">–</td></tr>
+      <tr><td>Number of grinds</td><td id="grindCount">0</td></tr>
+      <tr><td>Last final weight</td><td id="lastActual">–</td></tr>
+      <tr><td>Stop weight (target − offset)</td><td id="stopAtVal">–</td></tr>
+      <tr><td>Learned delay</td><td id="grindDelay">–</td></tr>
     </table>
   </div>
 
   <div class="card">
-    <h2>Inställningar</h2>
+    <h2>Settings</h2>
     <div class="row">
-      <div><label>Målvikt (g)</label>
+      <div><label>Target weight (g)</label>
         <input type="number" id="targetWeight" step="0.1" min="1" value="18.0"></div>
       <div><label>Pre-offset (g) 🔧</label>
         <input type="number" id="preoffset" step="0.1" min="0" value="0.5"></div>
     </div>
-    <div class="toggle-row"><label>Lärande delay-justering</label>
+    <div class="toggle-row"><label>Adaptive delay adjustment</label>
       <input type="checkbox" id="delayAdjust" checked></div>
-    <button class="btn-save" onclick="saveSettings()">💾 Spara inställningar</button>
+    <button class="btn-save" onclick="saveSettings()">💾 Save settings</button>
     <div class="msg" id="saveMsg"></div>
   </div>
 
@@ -440,9 +440,9 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
         <input type="text" id="tasmotaTopic" placeholder="sonoff"></div>
     </div>
     <div class="row">
-      <div><label>Användarnamn</label>
+      <div><label>Username</label>
         <input type="text" id="mqttUser" placeholder="(tomt = ingen auth)"></div>
-      <div><label>Lösenord</label>
+      <div><label>Password</label>
         <input type="password" id="mqttPass" placeholder="(tomt = ingen auth)"></div>
     </div>
     <button class="btn-save" onclick="saveMqtt()">💾 Spara MQTT</button>
@@ -450,18 +450,18 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   </div>
 
   <div class="card">
-    <h2>Manuell kontroll</h2>
-    <button class="btn-relay" onclick="toggleRelay()">⚡ Växla relä</button>
-    <button class="btn-tare"  onclick="tare()">⚖️ Tara våg (via webb)</button>
+    <h2>Manual control</h2>
+    <button class="btn-relay" onclick="toggleRelay()">⚡ Toggle relay</button>
+    <button class="btn-tare"  onclick="tare()">⚖️ Tare scale (via web)</button>
     <div class="msg" id="ctrlMsg"></div>
   </div>
 
 <script>
   const STATES = {
-    'IDLE':     '⏸ VÄNTAR',
-    'GRINDING': '🟢 MALER',
-    'SETTLING': '🟠 SÄTTER SIG',
-    'DONE':     '✅ KLAR'
+    'IDLE':     '⏸ IDLE',
+    'GRINDING': '🟢 GRINDING',
+    'SETTLING': '🟠 SETTLING',
+    'DONE':     '✅ DONE'
   };
   const STATE_COLORS = {
     'IDLE':'#444','GRINDING':'#2a7a4b','SETTLING':'#7a5500','DONE':'#0f5c3a'
@@ -474,9 +474,9 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       document.getElementById('weightVal').textContent = d.weight.toFixed(3)+' g';
       const pct = Math.min(100, Math.max(0, d.weight / Math.max(0.01, d.stopAt) * 100));
       document.getElementById('progressBar').style.width = pct+'%';
-      document.getElementById('bleBadge').textContent  = d.ble ? 'BLE: ✓' : 'BLE: söker...';
+      document.getElementById('bleBadge').textContent  = d.ble ? 'BLE: ✓' : 'BLE: searching...';
       document.getElementById('bleBadge').className    = 'badge '+(d.ble?'ble-ok':'ble-err');
-      document.getElementById('relayBadge').textContent= d.relay ? 'Relä: PÅ' : 'Relä: AV';
+      document.getElementById('relayBadge').textContent= d.relay ? 'Relay: ON' : 'Relay: OFF';
       document.getElementById('relayBadge').className  = 'badge '+(d.relay?'rel-on':'rel-off');
       const sb = document.getElementById('stateBadge');
       sb.textContent = STATES[d.state] || d.state;
@@ -564,7 +564,7 @@ void setupWebServer() {
     if (r->hasParam("preoffset",true))    preoffset    = r->getParam("preoffset",true)->value().toFloat();
     if (r->hasParam("delayAdjust",true))  delayAdjust  = r->getParam("delayAdjust",true)->value()=="1";
     savePrefs();
-    r->send(200,"text/plain","✓ Inställningar sparade");
+    r->send(200,"text/plain","✓ Settings sparade");
   });
 
   webServer.on("/mqtt", HTTP_POST, [](AsyncWebServerRequest* r){
@@ -577,25 +577,25 @@ void setupWebServer() {
     mqttClient.disconnect();
     mqttClient.setServer(mqttServer, mqttPort);
     Serial.printf("[MQTT] Ny config: %s:%d topic=%s\n", mqttServer, mqttPort, tasmotaTopic);
-    r->send(200,"text/plain","✓ MQTT sparat — återansluter...");
+    r->send(200,"text/plain","✓ MQTT saved — reconnecting...");
   });
 
   webServer.on("/relay/toggle", HTTP_GET, [](AsyncWebServerRequest* r){
     if (relayOn) {
       relayOff();
       if (grindState == STATE_GRINDING) enterState(STATE_IDLE);
-      r->send(200,"text/plain","Relä: AV");
+      r->send(200,"text/plain","Relay: OFF");
     } else {
       relayTurnOn();
       if (grindState == STATE_IDLE && scalesConnected) enterState(STATE_GRINDING);
-      r->send(200,"text/plain","Relä: PÅ");
+      r->send(200,"text/plain","Relay: ON");
     }
   });
 
   webServer.on("/tare", HTTP_GET, [](AsyncWebServerRequest* r){
-    if (!scalesConnected) { r->send(503,"text/plain","Ingen våg ansluten"); return; }
+    if (!scalesConnected) { r->send(503,"text/plain","No scale connected"); return; }
     bleTare();
-    r->send(200,"text/plain","⚖️ Tara skickat");
+    r->send(200,"text/plain","⚖️ Tare sent");
   });
 
   webServer.begin();
@@ -606,12 +606,12 @@ void setup() {
   Serial.begin(115200);
   delay(3000);
   Serial.println("\n========================================");
-  Serial.println("  GrinderCutoff startar...");
+  Serial.println("  GrinderCutoff starting...");
   Serial.println("========================================");
 
   loadPrefs();
 
-  Serial.printf("[WiFi] Ansluter till: %s\n", WIFI_SSID);
+  Serial.printf("[WiFi] Connecting to: %s\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   int tries = 0;
   while (WiFi.status() != WL_CONNECTED && tries < 20) {
@@ -622,7 +622,7 @@ void setup() {
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
     if (MDNS.begin("grindercutoff")) Serial.println("[mDNS] ✓ http://grindercutoff.local");
   } else {
-    Serial.println("[WiFi] ✗ Misslyckades");
+    Serial.println("[WiFi] ✗ Failed");
   }
 
   mqttClient.setServer(mqttServer, mqttPort);
@@ -641,7 +641,7 @@ void setup() {
 
   enterState(STATE_IDLE);
   Serial.println("----------------------------------------");
-  Serial.println("  Redo! Tara vågen och tryck på pluggen.");
+  Serial.println("  Ready! Tara vågen och tryck på pluggen.");
   Serial.println("----------------------------------------");
 }
 
@@ -674,7 +674,7 @@ void loop() {
     }
   } else if (scalesConnected) {
     if (!bleClient || !bleClient->isConnected()) {
-      Serial.println("[BLE]  Tappade anslutning - söker igen...");
+      Serial.println("[BLE]  Connection lost - searching again...");
       scalesConnected = false;
       notifyChar = nullptr; writeChar = nullptr;
       if (grindState == STATE_GRINDING) { relayOff(); enterState(STATE_IDLE); }
