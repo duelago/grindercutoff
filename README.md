@@ -62,6 +62,11 @@ https://www.aliexpress.com/item/1005008557621275.html
 <img width="1260" height="710" alt="Screenshot 2026-06-22 at 08 15 41" src="https://github.com/user-attachments/assets/54c38488-a9f1-42c3-8b43-c7e455af3b39" />
 
 https://www.aliexpress.com/item/1005006441099756.html
+
+<img width="1286" height="654" alt="Screenshot 2026-06-22 at 08 16 42" src="https://github.com/user-attachments/assets/248e98f2-0f3d-4045-98d1-8a256f7e55f7" />
+
+https://www.aliexpress.com/item/1005006441099756.html
+
 ---
 
 ## Software Requirements
