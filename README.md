@@ -11,6 +11,7 @@ Stop your grinder automatically when the desired dose is reached—without modif
 
 ---
 
+<img width="228" height="731" alt="Screenshot 2026-06-22 at 07 52 42" src="https://github.com/user-attachments/assets/94f0a867-318e-450a-b75b-d9a69efbf29c" />
 
 
 ## System Overview
