@@ -32,7 +32,7 @@ You need to install the ESP32 close to your grinder. The ESP32 speaks bluetooth 
 
 We have safety features: <p></p>The grinder will grind for maximum 1 minute.<br> Also make sure that the Tasmota relay always boots in OFF mode after a power failure etc. <br>
 Here is the way to do it: <br>
-Open your Tasmota device's Web Interface (by typing its IP address into your browser).Click on the Console button.Type the following command and press Enter:<b>PowerOnState 0</b>
+Open your Tasmota device's Web Interface (by typing its IP address into your browser). Click on the Console button. Type the following command and press Enter: <b>PowerOnState 0</b>
 
 ---
 
