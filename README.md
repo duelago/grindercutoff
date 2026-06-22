@@ -11,18 +11,7 @@ Stop your grinder automatically when the desired dose is reached—without modif
 
 ---
 
-## Features
 
-- ⚖️ Real-time weight monitoring over BLE
-- ☕ Automatic grinder shutoff at target dose
-- 📈 Adaptive compensation for grinder retention and fall-through
-- 🌐 Mobile-friendly web interface
-- 🔌 Works with any Tasmota-flashed smart plug
-- 🏠 Home Assistant friendly via MQTT
-- 💾 Persistent settings stored in NVS
-- 🚫 No app required during normal operation
-
----
 
 ## System Overview
 
@@ -32,17 +21,7 @@ MyScale KP2048B  ──BLE──►  ESP32-C6  ──MQTT──►  Broker  ─�
                                 └──WiFi──► Web Interface
 ```
 
-## Screenshots
 
-Add screenshots here after your first release:
-
-```markdown
-![Dashboard](docs/dashboard.png)
-![Settings](docs/settings.png)
-![Grinding](docs/grinding.png)
-```
-
----
 
 ## How It Works
 
@@ -221,22 +200,6 @@ Final settled weight:
 
 ---
 
-## Home Assistant
-
-GrinderCutoff works well alongside:
-
-- Home Assistant
-- Mosquitto MQTT Broker
-- Tasmota
-
-Typical uses:
-
-- Morning coffee automations
-- Dose monitoring
-- Smart grinder control
-- Espresso workflows
-
----
 
 ## Inspired By
 
@@ -245,23 +208,6 @@ Typical uses:
 
 - ESP Arduino BLE Scales
   https://github.com/Zer0-bit/esp-arduino-ble-scales
-
----
-
-## Roadmap
-
-- [ ] OTA firmware updates
-- [ ] Multiple grinder profiles
-- [ ] Dose statistics
-- [ ] MQTT auto-discovery for Home Assistant
-- [ ] Web UI charts
-- [ ] Scale battery monitoring
-
----
-
-## Contributing
-
-Issues, pull requests, testing reports, and feature suggestions are welcome.
 
 ---
 
