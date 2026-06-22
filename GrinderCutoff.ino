@@ -1,17 +1,19 @@
 /*
  * GrinderCutoff - ESP32-C6 Arduino Sketch
  * =========================================
- * Läser vikt från MyScale KP2048B via BLE och bryter strömmen
- * till en Tasmota-plug via MQTT när vikten uppnår ett förinställt värde.
+ * Reads weight from MyScale KP2048B via BLE and cuts power
+ * to a Tasmota plug via MQTT when the weight reaches a preset value.
  *
- * Flöde:
- *   1. Placera portafilter på vågen, tara med knapp på vågen
- *   2. Tryck på Tasmota-pluggens knapp → kvarnen starting
- *   3. ESP32 detekterar att relät slagits på → övervakar vikten
- *   4. Vid målvikt → relä av → klart
+ * Flow:
+ *   1. Place portafilter on the scale, tare using the button on the scale
+ *   2. Press the Tasmota plug button → grinder starts
+ *   3. ESP32 detects that the relay has turned on → starts monitoring weight
+ *   4. At target weight → relay off → done
  *
  * Board: "ESP32C6 Dev Module", ESP32 Arduino core 3.x
- * Tools → USB CDC On Boot → Enabled för Serial output!
+ * Tools → USB CDC On Boot → Enabled for Serial output!
+ *
+ * Will only work with ESP32C6 due to the bluetooth stack
  */
 
 #include <WiFi.h>
