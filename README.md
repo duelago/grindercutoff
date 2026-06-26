@@ -24,7 +24,7 @@ You need to install the ESP32 close to your grinder. The ESP32 speaks bluetooth 
 
 ## How It Works
 
-1. Place the portafilter on the scale and tare it.
+1. Place the portafilter on the scale and tare it. (LED on esp32 turns blue if scale is connected)
 2. Start the grinder using the smart plug button.
 3. GrinderCutoff detects that grinding has started.
 4. The ESP32 continuously monitors the scale weight via BLE.
