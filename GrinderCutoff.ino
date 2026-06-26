@@ -15,6 +15,7 @@
 #include <BLEClient.h>
 #include <BLERemoteCharacteristic.h>
 #include <HTTPClient.h>
+#include <Adafruit_NeoPixel.h>   // ← LED ADDITION
 
 void savePrefs();
 void startBleScan();
@@ -22,28 +23,40 @@ void onWeightReceived(float weight);
 void relayOff();
 void relayTurnOn();
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-const char* WIFI_SSID     = "SSID";
-const char* WIFI_PASSWORD = "PASSWORD";
-
-char mqttServer[64]   = "192.168.1.x";
-char mqttUser[32]     = "";
-char mqttPass[32]     = "";
-int  mqttPort         = 1883;
-char tasmotaTopic[64] = "sonoff";
-char tasmotaIP[64]    = "192.168.1.x";
-bool localControl     = true;
-
-float targetWeight = 18.0f;
-float preoffset    = 0.5f;
-
-// ─── State machine ────────────────────────────────────────────────────────────
+// ─── State machine enum (must be before Configuration so Arduino's auto-generated
+//     forward declaration for enterState(GrindState) can resolve the type) ────
 enum GrindState {
   STATE_IDLE,
   STATE_GRINDING,
   STATE_SETTLING,
   STATE_DONE
 };
+
+// ─── Configuration ────────────────────────────────────────────────────────────
+const char* WIFI_SSID     = "SSID";
+const char* WIFI_PASSWORD = "PASSWD";
+
+char mqttServer[64]   = "192.168.7.x";
+char mqttUser[32]     = "";
+char mqttPass[32]     = "";
+int  mqttPort         = 1883;
+char tasmotaTopic[64] = "Smartplug_XXXX";
+char tasmotaIP[64]    = "192.168.7.x";
+bool localControl     = true;
+
+float targetWeight = 18.0f;
+float preoffset    = 0.5f;
+
+// ─── LED ADDITION ─────────────────────────────────────────────────────────────
+#define LED_PIN   8    // WS2812 on Waveshare ESP32-C6-Zero
+#define LED_COUNT 1
+Adafruit_NeoPixel rgb(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+void ledBlue() { rgb.setPixelColor(0, rgb.Color(0, 0, 30)); rgb.show(); }
+void ledOff()  { rgb.setPixelColor(0, rgb.Color(0, 0,  0)); rgb.show(); }
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── State machine ────────────────────────────────────────────────────────────
 GrindState    grindState     = STATE_IDLE;
 unsigned long stateEnterTime = 0;
 unsigned long settleTimeout  = 3000;
@@ -218,6 +231,7 @@ bool connectToScale() {
   Serial.println("[BLE]  ✓ Notifications registered");
   delay(300);
   scalesConnected = true;
+  ledBlue();                                    // ← LED ADDITION
   Serial.println("[BLE]  ✓ Ready!");
   return true;
 }
@@ -666,6 +680,10 @@ void setup() {
   Serial.println("  GrinderCutoff starting...");
   Serial.println("========================================");
 
+  rgb.begin();          // ← LED ADDITION
+  rgb.setBrightness(200); // ← LED ADDITION (0-255, keep dim to save power)
+  ledOff();             // ← LED ADDITION
+
   loadPrefs();
   Serial.printf("[WiFi] Connecting to: %s\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -767,6 +785,7 @@ void loop() {
     if (!bleClient || !bleClient->isConnected()) {
       Serial.println("[BLE]  Lost connection - scanning again...");
       scalesConnected = false;
+      ledOff();                                 // ← LED ADDITION
       notifyChar = nullptr; writeChar = nullptr;
       if (grindState == STATE_GRINDING) { relayOff(); enterState(STATE_IDLE); }
       deviceFound = false;
