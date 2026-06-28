@@ -5,7 +5,7 @@
  * to a Tasmota plug via MQTT or local HTTP when target weight is reached.
  *
  * GPIO 8  – WS2812 RGB LED (Waveshare ESP32-C6-Zero)
- * GPIO 7  – Passive buzzer (new)
+ * GPIO 2 and GND – Passive buzzer
  */
 
 #include <WiFi.h>
