@@ -97,15 +97,15 @@ const char* WIFI_SSID     = "YOUR_WIFI";
 const char* WIFI_PASSWORD = "YOUR_PASSWORD";
 ```
 
-### Configure MQTT
+### Configure MQTT and/or http connection to Wifi-plug
 
 ```cpp
 char mqttServer[64]   = "192.168.1.x";
 char mqttUser[32]     = "";
 char mqttPass[32]     = "";
 char tasmotaTopic[64] = "Tasmota_topic_xxx";
+char tasmotaIP[64]    = "192.168.1.x";
 ```
-
 ### Upload
 
 Compile and flash using Arduino IDE.
