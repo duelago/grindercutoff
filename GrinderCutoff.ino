@@ -3,6 +3,9 @@
  * =========================================
  * Reads weight from MyScale KP2048B via BLE and cuts power
  * to a Tasmota plug via MQTT or local HTTP when target weight is reached.
+ *
+ * GPIO 8  – WS2812 RGB LED (Waveshare ESP32-C6-Zero)
+ * GPIO 7  – Passive buzzer (new)
  */
 
 #include <WiFi.h>
@@ -15,7 +18,7 @@
 #include <BLEClient.h>
 #include <BLERemoteCharacteristic.h>
 #include <HTTPClient.h>
-#include <Adafruit_NeoPixel.h>   // ← LED ADDITION
+#include <Adafruit_NeoPixel.h>
 
 void savePrefs();
 void startBleScan();
@@ -23,8 +26,7 @@ void onWeightReceived(float weight);
 void relayOff();
 void relayTurnOn();
 
-// ─── State machine enum (must be before Configuration so Arduino's auto-generated
-//     forward declaration for enterState(GrindState) can resolve the type) ────
+// ─── State machine enum ───────────────────────────────────────────────────────
 enum GrindState {
   STATE_IDLE,
   STATE_GRINDING,
@@ -47,14 +49,75 @@ bool localControl     = true;
 float targetWeight = 18.0f;
 float preoffset    = 0.5f;
 
-// ─── LED ADDITION ─────────────────────────────────────────────────────────────
-#define LED_PIN   8    // WS2812 on Waveshare ESP32-C6-Zero
+
+// ─── LED ──────────────────────────────────────────────────────────────────────
+#define LED_PIN   8
 #define LED_COUNT 1
 Adafruit_NeoPixel rgb(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 void ledBlue() { rgb.setPixelColor(0, rgb.Color(0, 0, 30)); rgb.show(); }
 void ledOff()  { rgb.setPixelColor(0, rgb.Color(0, 0,  0)); rgb.show(); }
-// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Buzzer (non-blocking) ────────────────────────────────────────────────────
+// Two-pulse "SMS" pattern:
+//   Pulse 1 (880 Hz, 80 ms) → silence (60 ms) → Pulse 2 (1200 Hz, 100 ms)
+//
+// Total duration: 240 ms. All timing handled in loop() – no delay().
+
+#define BUZZER_PIN     7
+
+enum BuzzerPhase {
+  BUZ_IDLE,
+  BUZ_PULSE1,
+  BUZ_GAP,
+  BUZ_PULSE2
+};
+
+struct Buzzer {
+  BuzzerPhase   phase     = BUZ_IDLE;
+  unsigned long phaseStart = 0;
+
+  // Call this to trigger the notification sound.
+  void notify() {
+    if (phase != BUZ_IDLE) return;   // already playing, don't restart
+    _startPulse1();
+  }
+
+  // Call this every loop() iteration.
+  void tick() {
+    if (phase == BUZ_IDLE) return;
+    unsigned long now = millis();
+    switch (phase) {
+      case BUZ_PULSE1:
+        if (now - phaseStart >= 80) { _silence(); phase = BUZ_GAP; phaseStart = now; }
+        break;
+      case BUZ_GAP:
+        if (now - phaseStart >= 60) { _startPulse2(); }
+        break;
+      case BUZ_PULSE2:
+        if (now - phaseStart >= 100) { _silence(); ledcDetach(BUZZER_PIN); phase = BUZ_IDLE; }
+        break;
+      default: break;
+    }
+  }
+
+private:
+  void _startPulse1() {
+    // Core 3.x API: ledcAttach(pin, freq, resolution)
+    ledcAttach(BUZZER_PIN, 880, 8);
+    ledcWrite(BUZZER_PIN, 128);
+    phase = BUZ_PULSE1; phaseStart = millis();
+  }
+  void _startPulse2() {
+    // ledcAttach on an already-attached pin just changes the frequency
+    ledcAttach(BUZZER_PIN, 1200, 8);
+    ledcWrite(BUZZER_PIN, 128);
+    phase = BUZ_PULSE2; phaseStart = millis();
+  }
+  void _silence() {
+    ledcWrite(BUZZER_PIN, 0);
+  }
+} buzzer;
 
 // ─── State machine ────────────────────────────────────────────────────────────
 GrindState    grindState     = STATE_IDLE;
@@ -82,15 +145,16 @@ static const uint8_t TARE_CMD[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0xD2, 0xD2
 };
+
 Preferences    prefs;
 WiFiClient     wifiClient;
 PubSubClient   mqttClient(wifiClient);
 AsyncWebServer webServer(80);
-BLEScan* bleScan    = nullptr;
-BLEClient* bleClient  = nullptr;
+BLEScan*       bleScan      = nullptr;
+BLEClient*     bleClient    = nullptr;
 BLERemoteCharacteristic* notifyChar = nullptr;
 BLERemoteCharacteristic* writeChar  = nullptr;
-BLEAdvertisedDevice* foundDevice = nullptr;
+BLEAdvertisedDevice*     foundDevice = nullptr;
 bool deviceFound = false;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -103,7 +167,7 @@ void enterState(GrindState newState) {
   Serial.printf("[STATE] → %s\n", names[newState]);
 }
 
-// ─── Tasmota control (MQTT or local HTTP) ────────────────────────────────────
+// ─── Tasmota control (MQTT or local HTTP) ─────────────────────────────────────
 void sendTasmotaCommand(const char* cmd) {
   if (localControl) {
     if (strlen(tasmotaIP) == 0) { Serial.println("[LOCAL] No Tasmota IP configured!"); return; }
@@ -231,7 +295,8 @@ bool connectToScale() {
   Serial.println("[BLE]  ✓ Notifications registered");
   delay(300);
   scalesConnected = true;
-  ledBlue();                                    // ← LED ADDITION
+  ledBlue();
+  buzzer.notify();   // ← trigger sound, returns immediately
   Serial.println("[BLE]  ✓ Ready!");
   return true;
 }
@@ -316,7 +381,7 @@ void loadPrefs() {
 
 // ─── MQTT ─────────────────────────────────────────────────────────────────────
 void mqttCallback(char* topic, byte* payload, unsigned int len) {
-  if (localControl) return; // Säkerhetsspärr
+  if (localControl) return;
   String msg;
   for (unsigned int i = 0; i < len; i++) msg += (char)payload[i];
   Serial.printf("[MQTT←] %s: %s\n", topic, msg.c_str());
@@ -340,7 +405,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int len) {
 }
 
 void mqttReconnect() {
-  if (localControl || mqttClient.connected()) return; // Förhindra anslutning om lokal styrning körs
+  if (localControl || mqttClient.connected()) return;
   Serial.printf("[MQTT] Connecting to %s:%d...\n", mqttServer, mqttPort);
   String id = "GrinderCutoff-" + String(random(0xffff), HEX);
   bool ok = strlen(mqttUser) > 0
@@ -384,7 +449,6 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
     .row{display:flex;gap:10px}.row>div{flex:1}
     .status-row{display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap}
     .badge{padding:4px 12px;border-radius:20px;font-size:.8em;font-weight:bold}
-    
     .ble-ok{background:#0f3460}.ble-err{background:#5c2020}
     .rel-on{background:#2a7a4b}.rel-off{background:#7a2a2a}
     label{display:block;margin-bottom:4px;font-size:.85em;color:#aaa}
@@ -505,17 +569,17 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
   const STATE_COLORS = {
     'IDLE':'#444','GRINDING':'#2a7a4b','SETTLING':'#7a5500','DONE':'#0f5c3a'
   };
-  
-  const connFields = ['mqttServer','mqttPort','tasmotaTopic','mqttUser','mqttPass','tasmotaIP', 'useMQTT', 'useLocal'];
-  
-  function connFocused() { 
+
+  const connFields = ['mqttServer','mqttPort','tasmotaTopic','mqttUser','mqttPass','tasmotaIP','useMQTT','useLocal'];
+
+  function connFocused() {
     return connFields.includes(document.activeElement.id);
   }
 
   function modeChanged() {
     const local = document.getElementById('useLocal').checked;
-    document.getElementById('mqttBox').className   = local ? 'inactive-mode' : 'active-mode';
-    document.getElementById('localBox').className  = local ? 'active-mode'   : 'inactive-mode';
+    document.getElementById('mqttBox').className  = local ? 'inactive-mode' : 'active-mode';
+    document.getElementById('localBox').className = local ? 'active-mode'   : 'inactive-mode';
   }
 
   function fetchStatus() {
@@ -537,7 +601,7 @@ const char HTML_PAGE[] PROGMEM = R"rawliteral(
       document.getElementById('targetWeight').value = d.targetWeight;
       document.getElementById('preoffset').value    = d.preoffset;
       document.getElementById('delayAdjust').checked= d.delayAdjust;
-      
+
       if (!connFocused()) {
         document.getElementById('useMQTT').checked  = !d.localControl;
         document.getElementById('useLocal').checked =  d.localControl;
@@ -628,7 +692,7 @@ void setupWebServer() {
     savePrefs();
     r->send(200,"text/plain","✓ Settings saved");
   });
-  
+
   webServer.on("/mqtt", HTTP_POST, [](AsyncWebServerRequest* r){
     if (r->hasParam("localControl",true)) localControl  = r->getParam("localControl",true)->value()=="1";
     if (r->hasParam("tasmotaIP",true))    strlcpy(tasmotaIP,    r->getParam("tasmotaIP",true)->value().c_str(),    sizeof(tasmotaIP));
@@ -637,10 +701,7 @@ void setupWebServer() {
     if (r->hasParam("mqttUser",true))     strlcpy(mqttUser,     r->getParam("mqttUser",true)->value().c_str(),     sizeof(mqttUser));
     if (r->hasParam("mqttPass",true))     strlcpy(mqttPass,     r->getParam("mqttPass",true)->value().c_str(),     sizeof(mqttPass));
     if (r->hasParam("mqttPort",true))     mqttPort = r->getParam("mqttPort",true)->value().toInt();
-    
     savePrefs();
-    
-    // FIX: Om vi växlar till lokal kontroll, tvinga fram en urkoppling från MQTT direkt!
     if (localControl) {
       mqttClient.disconnect();
       Serial.println("[CFG] Switched to LOCAL HTTP. Disconnecting MQTT client.");
@@ -648,11 +709,10 @@ void setupWebServer() {
       mqttClient.disconnect();
       mqttClient.setServer(mqttServer, mqttPort);
     }
-    
     Serial.printf("[CFG] Mode: %s\n", localControl ? "LOCAL HTTP" : "MQTT");
     r->send(200,"text/plain", localControl ? "✓ Local control enabled" : "✓ MQTT saved — reconnecting...");
   });
-  
+
   webServer.on("/relay/toggle", HTTP_GET, [](AsyncWebServerRequest* r){
     if (relayOn) {
       relayOff();
@@ -664,11 +724,13 @@ void setupWebServer() {
       r->send(200,"text/plain","Relay: ON");
     }
   });
+
   webServer.on("/tare", HTTP_GET, [](AsyncWebServerRequest* r){
     if (!scalesConnected) { r->send(503,"text/plain","No scale connected"); return; }
     bleTare();
     r->send(200,"text/plain","⚖️ Tare sent");
   });
+
   webServer.begin();
 }
 
@@ -680,11 +742,16 @@ void setup() {
   Serial.println("  GrinderCutoff starting...");
   Serial.println("========================================");
 
-  rgb.begin();          // ← LED ADDITION
-  rgb.setBrightness(200); // ← LED ADDITION (0-255, keep dim to save power)
-  ledOff();             // ← LED ADDITION
+  rgb.begin();
+  rgb.setBrightness(200);
+  ledOff();
+
+  // Buzzer pin starts silent (ledc not attached yet – just ensure pin is low)
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
 
   loadPrefs();
+
   Serial.printf("[WiFi] Connecting to: %s\n", WIFI_SSID);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   int tries = 0;
@@ -703,7 +770,6 @@ void setup() {
     Serial.println("[WiFi] ✗ Failed");
   }
 
-  // FIX: Sätt bara upp server-parametrar om vi faktiskt ska använda MQTT vid boot
   if (!localControl) {
     mqttClient.setServer(mqttServer, mqttPort);
     mqttClient.setCallback(mqttCallback);
@@ -731,13 +797,14 @@ void setup() {
 
 // ─── Loop ─────────────────────────────────────────────────────────────────────
 void loop() {
+  buzzer.tick();   // ← drives the non-blocking buzzer state machine
+
   if (WiFi.status() == WL_CONNECTED) {
-    // FIX: Dubbelkolla localControl extra noga här för att förhindra oväntade mqttReconnect
     if (!localControl) {
       if (!mqttClient.connected()) {
         static unsigned long lastAttempt = 0;
-        if (millis() - lastAttempt > 5000) { 
-          lastAttempt = millis(); 
+        if (millis() - lastAttempt > 5000) {
+          lastAttempt = millis();
           mqttReconnect();
         }
       } else {
@@ -785,7 +852,7 @@ void loop() {
     if (!bleClient || !bleClient->isConnected()) {
       Serial.println("[BLE]  Lost connection - scanning again...");
       scalesConnected = false;
-      ledOff();                                 // ← LED ADDITION
+      ledOff();
       notifyChar = nullptr; writeChar = nullptr;
       if (grindState == STATE_GRINDING) { relayOff(); enterState(STATE_IDLE); }
       deviceFound = false;
