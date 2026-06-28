@@ -45,7 +45,7 @@ Open your Tasmota device's Web Interface (by typing its IP address into your bro
 | ESP32-C6 |  https://www.aliexpress.com/item/1005008557621275.html |
 | Scale | MyScale KP2048B https://www.aliexpress.com/item/1005006441099756.html |
 | Smart Plug | Tasmota-flashed wifi plug https://www.aliexpress.com/item/1005008880599868.html |
-| Buzzer (connect to pin 7 and GND)| https://www.aliexpress.com/w/wholesale-passive-buzzer-3.3v.html |
+| Buzzer (connect to pin 2 and GND)| https://www.aliexpress.com/w/wholesale-passive-buzzer-3.3v.html |
 | MQTT Broker | Mosquitto | (Will also work standalone without mqtt using http instead)
 | WiFi Network | 2.4 GHz |
 
