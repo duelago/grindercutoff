@@ -64,7 +64,7 @@ void ledOff()  { rgb.setPixelColor(0, rgb.Color(0, 0,  0)); rgb.show(); }
 //
 // Total duration: 240 ms. All timing handled in loop() – no delay().
 
-#define BUZZER_PIN     7
+#define BUZZER_PIN     2
 
 enum BuzzerPhase {
   BUZ_IDLE,
